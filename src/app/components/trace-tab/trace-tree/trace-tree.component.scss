@@ -13,6 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+.trace-tree-root {
+  margin-top: 15px;
+}
+
 .trace-container {
   width: 100%;
   white-space: nowrap;
@@ -114,6 +118,10 @@
 .trace-row-left {
   display: flex;
   width: 50%;
+}
+
+.trace-icon {
+  margin-right: 8px;
 }
 
 .invocation-id-container {

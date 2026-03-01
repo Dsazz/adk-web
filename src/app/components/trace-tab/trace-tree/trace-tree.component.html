@@ -14,16 +14,21 @@
  limitations under the License.
 -->
 
-<div style="margin-top: 15px">
+<div class="trace-tree-root">
   <div class="invocation-id-container">Invocation ID: 
     <div class="invocation-id">{{invocationId}}</div>
   </div>
   <div class="trace-container">
-    @for (node of flatTree; track node) {
+    @for (node of flatTree; track node.span.span_id) {
+    @let span = node.span;
+    @let labelWidth = 400 - node.level * 20;
+    @let barLeft = getRelativeStart(span);
+    @let barWidth = getRelativeWidth(span);
+    @let durationMs = (toMs(span.end_time) - toMs(span.start_time)).toFixed(2);
     <div
       class="trace-row"
       (click)="selectRow(node)"
-      [class.selected]="rowSelected(node)"
+      [class.selected]="node.isSelected"
       (mouseenter)="onHover(node)"
       (mouseleave)="onHoverOut()"
     >
@@ -34,33 +39,32 @@
           }
         </div>
         <span
-          class="material-symbols-outlined"
-          style="margin-right: 8px"
-          [class.is-event-row]="isEventRow(node)"
+          class="material-symbols-outlined trace-icon"
+          [class.is-event-row]="node.isEventRow"
         >
-          {{ getSpanIcon(node.span.name) }}
+          {{ getSpanIcon(span.name) }}
         </span>
         <div
           class="trace-label"
-          [style.width.px]="400 - node.level * 20"
-          [class.is-event-row]="isEventRow(node)"
+          [style.width.px]="labelWidth"
+          [class.is-event-row]="node.isEventRow"
         >
-          {{ node.span.name }}
+          {{ span.name }}
         </div>
       </div>
       <div class="trace-bar-container">
         <div
           class="trace-bar"
-          [style.left.%]="getRelativeStart(node.span)"
-          [style.width.%]="getRelativeWidth(node.span)"
+          [style.left.%]="barLeft"
+          [style.width.%]="barWidth"
         >
-          {{ (toMs(node.span.end_time) - toMs(node.span.start_time)).toFixed(2) }}ms
+          {{ durationMs }}ms
         </div>
-        @if (getRelativeWidth(node.span) < 10) {
+        @if (barWidth < 10) {
         <span
           class="short-trace-bar-duration"
-          [style.left.%]="getRelativeStart(node.span) + 5"
-          >{{ (toMs(node.span.end_time) - toMs(node.span.start_time)).toFixed(2) }}ms</span
+          [style.left.%]="barLeft + 5"
+          >{{ durationMs }}ms</span
         >
         }
       </div>

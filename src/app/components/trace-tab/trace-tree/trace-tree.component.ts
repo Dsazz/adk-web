@@ -14,24 +14,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import {Component, inject, Input} from '@angular/core';
+import {Component, inject, Input, OnChanges, OnInit, SimpleChanges} from '@angular/core';
 
 import {Span} from '../../../core/models/Trace';
 import {TRACE_SERVICE} from '../../../core/services/interfaces/trace';
+
+interface FlatTreeNode {
+  span: Span;
+  level: number;
+  isEventRow: boolean;
+  isSelected: boolean;
+}
 
 @Component({
   selector: 'app-trace-tree',
   templateUrl: './trace-tree.component.html',
   styleUrl: './trace-tree.component.scss',
 })
-export class TraceTreeComponent {
+export class TraceTreeComponent implements OnInit, OnChanges {
   @Input() spans: any[] = [];
   @Input() invocationId: string = '';
   tree: Span[] = [];
   eventData: Map<string, any>|undefined;
   baseStartTimeMs = 0;
   totalDurationMs = 1;
-  flatTree: {span: Span; level: number}[] = [];
+  flatTree: FlatTreeNode[] = [];
   traceLabelIconMap = new Map<string, string>([
     ['Invocation', 'start'],
     // TODO: Remove agent_run mapping once all ADKs span names follow OTLP GenAI semconv.
@@ -47,14 +54,34 @@ export class TraceTreeComponent {
   constructor() {}
 
   ngOnInit(): void {
-    this.tree = this.buildSpanTree(this.spans);
-    this.flatTree = this.flattenTree(this.tree);
+    this.rebuildTreeState();
     const times = this.getGlobalTimes(this.spans);
     this.baseStartTimeMs = times.start;
     this.totalDurationMs = times.duration;
-    this.traceService.selectedTraceRow$.subscribe(
-        span => this.selectedRow = span);
-    this.traceService.eventData$.subscribe(e => this.eventData = e);
+    this.traceService.selectedTraceRow$.subscribe((span: Span|undefined) => {
+      this.selectedRow = span;
+      this.refreshSelectionFlags();
+    });
+    this.traceService.eventData$.subscribe((e: Map<string, any>|undefined) => {
+      this.eventData = e;
+      this.refreshEventRowFlags();
+    });
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['spans']) {
+      this.rebuildTreeState();
+      const times = this.getGlobalTimes(this.spans);
+      this.baseStartTimeMs = times.start;
+      this.totalDurationMs = times.duration;
+    }
+  }
+
+  private rebuildTreeState() {
+    this.tree = this.buildSpanTree(this.spans);
+    this.flatTree = this.flattenTree(this.tree);
+    this.refreshSelectionFlags();
+    this.refreshEventRowFlags();
   }
 
 
@@ -78,9 +105,13 @@ export class TraceTreeComponent {
   }
 
   getGlobalTimes(spans: Span[]) {
+    if (!spans || spans.length === 0) {
+      return {start: 0, duration: 1};
+    }
     const start = Math.min(...spans.map(s => this.toMs(s.start_time)));
     const end = Math.max(...spans.map(s => this.toMs(s.end_time)));
-    return {start, duration: end - start};
+    const duration = end - start;
+    return {start, duration: duration > 0 ? duration : 1};
   }
 
   toMs(nanos: number): number {
@@ -99,13 +130,35 @@ export class TraceTreeComponent {
         100;
   }
 
-  flattenTree(spans: Span[], level: number = 0): any[] {
+  flattenTree(spans: Span[], level: number = 0): FlatTreeNode[] {
     const tree = spans.flatMap(
         span =>
-            [{span, level},
+            [{span, level, isEventRow: false, isSelected: false},
              ...(span.children ? this.flattenTree(span.children, level + 1) :
                                  [])]);
     return tree
+  }
+
+  private isSpanEventRow(span: Span): boolean {
+    if (!span.attributes) {
+      return false;
+    }
+
+    const eventId = span.attributes['gcp.vertex.agent.event_id'];
+    return !!(eventId && this.eventData && this.eventData.has(eventId));
+  }
+
+  private refreshEventRowFlags() {
+    for (const node of this.flatTree) {
+      node.isEventRow = this.isSpanEventRow(node.span);
+    }
+  }
+
+  private refreshSelectionFlags() {
+    for (const node of this.flatTree) {
+      node.isSelected = !!this.selectedRow &&
+          this.selectedRow.span_id === node.span.span_id;
+    }
   }
 
   getSpanIcon(label: string) {
@@ -129,21 +182,6 @@ export class TraceTreeComponent {
     }
     this.traceService.selectedRow(node.span);
     this.traceService.setHoveredMessages(node.span, this.invocationId)
-  }
-
-  rowSelected(node: any) {
-    return this.selectedRow == node.span
-  }
-
-  isEventRow(node: any) {
-    if (!node.span.attributes) {
-      return false;
-    }
-    const eventId = node?.span.attributes['gcp.vertex.agent.event_id'];
-    if (eventId && this.eventData && this.eventData.has(eventId)) {
-      return true;
-    }
-    return false;
   }
 
   onHover(n: any) {
